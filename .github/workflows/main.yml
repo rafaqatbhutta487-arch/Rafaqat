@@ -30,9 +30,7 @@ jobs:
         run: |
           set -e
 
-          ZIP_FILE=$(find . -type f -name "*.zip" \
-            ! -path "./.git/*" \
-            | head -n 1)
+          ZIP_FILE=$(find . -type f -name "*.zip" ! -path "./.git/*" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: No ZIP file found."
@@ -49,7 +47,6 @@ jobs:
 
           rm -rf project
           mkdir -p project
-
           unzip -q "$ZIP_FILE" -d project
 
           echo "Project extracted."
@@ -59,9 +56,7 @@ jobs:
         run: |
           set -e
 
-          SETTINGS_FILE=$(find project -type f \
-            \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-            | head -n 1)
+          SETTINGS_FILE=$(find project -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "ERROR: Gradle settings file not found."
@@ -71,9 +66,7 @@ jobs:
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Android project:"
-          echo "$PROJECT_DIR"
+          echo "Android project: $PROJECT_DIR"
 
       - name: Auto Fix Project
         shell: bash
@@ -85,94 +78,39 @@ jobs:
 
           echo "Starting automatic fixes..."
 
-          # AGP 9 built-in Kotlin fix
+          # AGP 9 built-in Kotlin
           if [ -f "$ROOT/build.gradle.kts" ]; then
-            sed -i '/org.jetbrains.kotlin.android.*apply false/d' \
-              "$ROOT/build.gradle.kts"
+            sed -i '/org.jetbrains.kotlin.android.*apply false/d' "$ROOT/build.gradle.kts"
           fi
 
           if [ -f "$ROOT/build.gradle" ]; then
-            sed -i '/org.jetbrains.kotlin.android.*apply false/d' \
-              "$ROOT/build.gradle"
+            sed -i '/org.jetbrains.kotlin.android.*apply false/d' "$ROOT/build.gradle"
           fi
 
           if [ -f "$APP/build.gradle.kts" ]; then
-            sed -i '/id("org.jetbrains.kotlin.android")/d' \
-              "$APP/build.gradle.kts"
-
-            sed -i '/jvmTarget = "17"/d' \
-              "$APP/build.gradle.kts"
+            sed -i '/id("org.jetbrains.kotlin.android")/d' "$APP/build.gradle.kts"
+            sed -i '/jvmTarget = "17"/d' "$APP/build.gradle.kts"
           fi
 
-          # Remove old kotlinOptions block
-          python3 - "$APP/build.gradle.kts" <<'PY'
-import sys
-from pathlib import Path
+          # Remove kotlinOptions block
+          if [ -f "$APP/build.gradle.kts" ]; then
+            sed -i '/kotlinOptions[[:space:]]*{/,+3d' "$APP/build.gradle.kts"
+          fi
 
-p = Path(sys.argv[1])
-
-if p.exists():
-    s = p.read_text()
-
-    while "kotlinOptions {" in s:
-        start = s.find("kotlinOptions {")
-        brace = s.find("{", start)
-
-        if brace == -1:
-            break
-
-        depth = 0
-        end = None
-
-        for i in range(brace, len(s)):
-            if s[i] == "{":
-                depth += 1
-            elif s[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-
-        if end is None:
-            break
-
-        s = s[:start] + s[end:]
-
-    p.write_text(s)
-
-print("Gradle Kotlin cleanup completed.")
-PY
-
-          # Auto-fix MainActivity comment callback
-          MAIN_FILE=$(find "$APP/src/main/java" \
-            -name "MainActivity.kt" \
-            | head -n 1)
+          # Auto-fix comment callback
+          MAIN_FILE=$(find "$APP/src/main/java" -name "MainActivity.kt" | head -n 1)
 
           if [ -n "$MAIN_FILE" ]; then
             echo "Checking MainActivity.kt..."
 
-            python3 - "$MAIN_FILE" <<'PY'
-import sys
-from pathlib import Path
+            sed -i 's/vm\.comment(video\.id, commentText)/vm.comment(video.id, commentText) { }/' "$MAIN_FILE"
 
-p = Path(sys.argv[1])
-s = p.read_text()
-
-old = "vm.comment(video.id, commentText)"
-new = "vm.comment(video.id, commentText) { }"
-
-if old in s and new not in s:
-    s = s.replace(old, new)
-    p.write_text(s)
-    print("Comment done-callback auto-fixed.")
-else:
-    print("Comment callback already fixed or not found.")
-PY
+            echo "Comment callback auto-fix applied."
           fi
 
           chmod +x "$ROOT/gradlew"
 
-          echo "All automatic fixes completed."
+          echo "Automatic fixes completed."
 
       - name: Check Java
         shell: bash
@@ -189,33 +127,22 @@ PY
         shell: bash
         run: |
           set -e
-
           cd "$PROJECT_DIR"
-
-          ./gradlew clean \
-            --no-daemon \
-            --stacktrace
+          ./gradlew clean --no-daemon --stacktrace
 
       - name: Build Debug APK
         shell: bash
         run: |
           set -e
-
           cd "$PROJECT_DIR"
-
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Find APK
         shell: bash
         run: |
           set -e
 
-          APK_FILE=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            | head -n 1)
+          APK_FILE=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1)
 
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: APK was not generated."
@@ -223,10 +150,9 @@ PY
           fi
 
           mkdir -p apk-output
-
           cp "$APK_FILE" apk-output/CineNova.apk
 
-          echo "APK generated successfully:"
+          echo "APK generated:"
           echo "$APK_FILE"
 
       - name: Upload APK
