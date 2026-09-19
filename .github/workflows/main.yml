@@ -28,13 +28,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Locate CineNova ZIP
         shell: bash
         run: |
           set -e
-          ZIP="$(find . -maxdepth 2 -type f -iname '*.zip' | head -n 1 || true)"
+          ZIP="$(find . -maxdepth 3 -type f -iname '*.zip' | head -n 1 || true)"
           if [ -z "$ZIP" ]; then
             echo "ERROR: CineNova ZIP not found."
             exit 1
@@ -50,9 +49,9 @@ jobs:
           mkdir -p build-src
           unzip -q "$SOURCE_ZIP" -d build-src
 
-          # Handle ZIPs that contain one extra top-level folder.
+          # Normalize ZIPs that contain one extra top-level folder.
           if [ ! -f build-src/gradlew ]; then
-            GRADLEW="$(find build-src -maxdepth 4 -type f -name gradlew | head -n 1 || true)"
+            GRADLEW="$(find build-src -maxdepth 5 -type f -name gradlew | head -n 1 || true)"
             if [ -n "$GRADLEW" ]; then
               PROJECT_DIR="$(dirname "$GRADLEW")"
               mkdir -p normalized
@@ -63,14 +62,14 @@ jobs:
           fi
 
           test -f build-src/gradlew || {
-            echo "ERROR: Android Gradle wrapper not found."
-            find build-src -maxdepth 5 -type f | head -n 200
+            echo "ERROR: Android Gradle wrapper (gradlew) not found inside ZIP."
+            find build-src -maxdepth 6 -type f | head -n 200
             exit 1
           }
 
           chmod +x build-src/gradlew
 
-      - name: Validate required Android project files
+      - name: Validate Android project
         working-directory: build-src
         shell: bash
         run: |
@@ -85,14 +84,11 @@ jobs:
         working-directory: build-src
         shell: bash
         run: |
-          set -e
-          if [ -f app/google-services.json ]; then
+          if [ -f app/google-services.json ] || [ -f google-services.json ]; then
             echo "Firebase configuration found."
-          elif [ -f google-services.json ]; then
-            echo "Firebase configuration found at project root."
           else
-            echo "WARNING: google-services.json was not found."
-            echo "Google Sign-In/Firebase features may not work."
+            echo "WARNING: google-services.json not found."
+            echo "The APK may build, but Firebase/Google Sign-In may not work."
           fi
 
       - name: Clean project
@@ -135,7 +131,5 @@ jobs:
       - name: Build summary
         if: success()
         run: |
-          echo "======================================"
-          echo "CineNova APK build completed."
-          echo "Download: Actions -> Artifacts"
-          echo "======================================"
+          echo "CineNova APK build completed successfully."
+          echo "Go to Actions -> this run -> Artifacts -> CineNova-Real-APK"
