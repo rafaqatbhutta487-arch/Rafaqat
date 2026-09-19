@@ -104,86 +104,75 @@ jobs:
               "$APP/build.gradle.kts"
           fi
 
-          # Remove old kotlinOptions block safely
+          # Remove old kotlinOptions block
           python3 - "$APP/build.gradle.kts" <<'PY'
 import sys
 from pathlib import Path
 
 p = Path(sys.argv[1])
 
-if not p.exists():
-    sys.exit(0)
+if p.exists():
+    s = p.read_text()
 
-s = p.read_text()
+    while "kotlinOptions {" in s:
+        start = s.find("kotlinOptions {")
+        brace = s.find("{", start)
 
-while "kotlinOptions {" in s:
-    start = s.find("kotlinOptions {")
-    brace = s.find("{", start)
+        if brace == -1:
+            break
 
-    if brace == -1:
-        break
+        depth = 0
+        end = None
 
-    depth = 0
-    end = None
+        for i in range(brace, len(s)):
+            if s[i] == "{":
+                depth += 1
+            elif s[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
 
-    for i in range(brace, len(s)):
-        if s[i] == "{":
-            depth += 1
-        elif s[i] == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
+        if end is None:
+            break
 
-    if end is None:
-        break
+        s = s[:start] + s[end:]
 
-    s = s[:start] + s[end:]
+    p.write_text(s)
 
-p.write_text(s)
+print("Gradle Kotlin cleanup completed.")
 PY
 
-          # MainActivity comment callback fix
+          # Auto-fix MainActivity comment callback
           MAIN_FILE=$(find "$APP/src/main/java" \
             -name "MainActivity.kt" \
             | head -n 1)
 
           if [ -n "$MAIN_FILE" ]; then
+            echo "Checking MainActivity.kt..."
 
             python3 - "$MAIN_FILE" <<'PY'
 import sys
-import re
 from pathlib import Path
 
 p = Path(sys.argv[1])
 s = p.read_text()
 
-# Fix common form:
-# vm.comment(video.id, commentText)
-# comments = vm.loadComments(video.id)
+old = "vm.comment(video.id, commentText)"
+new = "vm.comment(video.id, commentText) { }"
 
-pattern = r'vm\.comment\(video\.id,\s*commentText\)\s*\n(\s*)comments\s*=\s*vm\.loadComments\(video\.id\)'
-
-replacement = (
-    r'vm.comment(video.id, commentText) {\n'
-    r'\1    comments = vm.loadComments(video.id)\n'
-    r'\1}'
-)
-
-new_s, count = re.subn(pattern, replacement, s, count=1)
-
-if count:
-    p.write_text(new_s)
-    print("Comment callback auto-fixed.")
+if old in s and new not in s:
+    s = s.replace(old, new)
+    p.write_text(s)
+    print("Comment done-callback auto-fixed.")
 else:
-    print("Comment callback pattern not found; continuing.")
+    print("Comment callback already fixed or not found.")
 PY
-
           fi
 
           chmod +x "$ROOT/gradlew"
 
-          echo "Automatic fixes completed."
+          echo "All automatic fixes completed."
 
       - name: Check Java
         shell: bash
@@ -237,7 +226,7 @@ PY
 
           cp "$APK_FILE" apk-output/CineNova.apk
 
-          echo "APK:"
+          echo "APK generated successfully:"
           echo "$APK_FILE"
 
       - name: Upload APK
