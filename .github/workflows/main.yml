@@ -1,169 +1,92 @@
 name: CineNova Auto Fix APK
-
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-
 permissions:
   contents: read
-
 jobs:
   build:
     name: Build CineNova APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Setup Java 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-
       - name: Find project ZIP
         shell: bash
         run: |
-          set -e
-
           ZIP_FILE=$(find . -type f -name "*.zip" ! -path "./.git/*" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found."
-            exit 1
-          fi
-
-          echo "Using ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
       - name: Extract project
         shell: bash
         run: |
-          set -e
-
           rm -rf project
           mkdir -p project
           unzip -q "$ZIP_FILE" -d project
-
-          echo "Project extracted."
-
       - name: Find Android Gradle project
         shell: bash
         run: |
-          set -e
-
           SETTINGS_FILE=$(find project -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) | head -n 1)
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Gradle settings file not found."
-            exit 1
-          fi
-
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android project: $PROJECT_DIR"
-
       - name: Auto Fix Project
         shell: bash
         run: |
           set -e
-
           ROOT="$PROJECT_DIR"
           APP="$PROJECT_DIR/app"
-
           echo "Starting automatic fixes..."
-
-          # AGP 9 built-in Kotlin
-          if [ -f "$ROOT/build.gradle.kts" ]; then
-            sed -i '/org.jetbrains.kotlin.android.*apply false/d' "$ROOT/build.gradle.kts"
-          fi
-
-          if [ -f "$ROOT/build.gradle" ]; then
-            sed -i '/org.jetbrains.kotlin.android.*apply false/d' "$ROOT/build.gradle"
-          fi
-
-          if [ -f "$APP/build.gradle.kts" ]; then
-            sed -i '/id("org.jetbrains.kotlin.android")/d' "$APP/build.gradle.kts"
-            sed -i '/jvmTarget = "17"/d' "$APP/build.gradle.kts"
-          fi
-
-          # Remove kotlinOptions block
-          if [ -f "$APP/build.gradle.kts" ]; then
-            sed -i '/kotlinOptions[[:space:]]*{/,+3d' "$APP/build.gradle.kts"
-          fi
-
-          # Auto-fix comment callback
+          if [ -f "$ROOT/build.gradle.kts" ]; then sed -i '/org.jetbrains.kotlin.android.*apply false/d' "$ROOT/build.gradle.kts"; fi
+          if [ -f "$ROOT/build.gradle" ]; then sed -i '/org.jetbrains.kotlin.android.*apply false/d' "$ROOT/build.gradle"; fi
+          if [ -f "$APP/build.gradle.kts" ]; then sed -i '/id("org.jetbrains.kotlin.android")/d' "$APP/build.gradle.kts"; sed -i '/jvmTarget = "17"/d' "$APP/build.gradle.kts"; fi
+          if [ -f "$APP/build.gradle.kts" ]; then sed -i '/kotlinOptions[[:space:]]*{/,+3d' "$APP/build.gradle.kts"; fi
           MAIN_FILE=$(find "$APP/src/main/java" -name "MainActivity.kt" | head -n 1)
-
-          if [ -n "$MAIN_FILE" ]; then
-            echo "Checking MainActivity.kt..."
-            sed -i 's/vm\.comment(video\.id, commentText)/vm.comment(video.id, commentText) { }/' "$MAIN_FILE"
-            echo "Comment callback auto-fix applied."
+          if [ -n "$MAIN_FILE" ]; then sed -i 's/vm\.comment(video\.id, commentText)/vm.comment(video.id, commentText) { }/' "$MAIN_FILE"; fi
+          
+          echo "--- SUPER GOOGLE FIX ---"
+          # 1. Har file me jo Google ka code hai usko idToken pe badlo
+          find "$APP" -type f -name "*.kt" -print0 | xargs -0 sed -i 's/\.requestServerAuthCode([^)]*)/.requestIdToken("979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com")/g'
+          find "$APP" -type f -name "*.kt" -print0 | xargs -0 sed -i 's/requestServerAuthCode/requestIdToken/g'
+          
+          # 2. Sabse important - Jahan ye error message hai wahan ka logic hi badal do
+          ERROR_FILE=$(grep -r "did not return a valid authorization code" "$APP" --include="*.kt" -l | head -n 1)
+          echo "Error file found: $ERROR_FILE"
+          if [ -n "$ERROR_FILE" ]; then
+            # Is file me serverAuthCode wali checking ko idToken se replace karo
+            sed -i 's/serverAuthCode/idToken/g' "$ERROR_FILE"
+            sed -i 's/getServerAuthCode()/idToken/g' "$ERROR_FILE"
+            sed -i 's/authCode/idToken/g' "$ERROR_FILE"
+            sed -i 's/authorization code/idToken/g' "$ERROR_FILE"
           fi
-
-          # --- FIX GOOGLE AUTH (NEW FIX) ---
-          echo "Fixing Google Auth - replacing serverAuthCode with idToken..."
-          find "$APP" -type f -name "*.kt" -exec sed -i 's/\.requestServerAuthCode([^)]*)/.requestIdToken("979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com")/g' {} +
-          find "$APP" -type f -name "*.kt" -exec sed -i 's/requestServerAuthCode/requestIdToken/g' {} +
+          
+          # 3. Saari .kt files me idToken ka istemal force karo
           find "$APP" -type f -name "*.kt" -exec sed -i 's/\.serverAuthCode/.idToken/g' {} +
-          find "$APP" -type f -name "*.kt" -exec sed -i 's/\.getServerAuthCode()/.idToken/g' {} +
-          echo "Google Auth fix applied."
+          find "$APP" -type f -name "*.kt" -exec sed -i 's/account\.serverAuthCode/account.idToken/g' {} +
+          find "$APP" -type f -name "*.kt" -exec sed -i 's/it\.serverAuthCode/it.idToken/g' {} +
 
           chmod +x "$ROOT/gradlew"
-
-          echo "Automatic fixes completed."
-
-      - name: Check Java
-        shell: bash
-        run: |
-          java -version
-
-      - name: Check Gradle
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          ./gradlew --version
-
-      - name: Gradle Clean
-        shell: bash
-        run: |
-          set -e
-          cd "$PROJECT_DIR"
-          ./gradlew clean --no-daemon --stacktrace
+          echo "Fix done"
 
       - name: Build Debug APK
         shell: bash
         run: |
-          set -e
           cd "$PROJECT_DIR"
           ./gradlew assembleDebug --no-daemon --stacktrace
-
       - name: Find APK
         shell: bash
         run: |
-          set -e
-
           APK_FILE=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1)
-
-          if [ -z "$APK_FILE" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
           mkdir -p apk-output
           cp "$APK_FILE" apk-output/CineNova.apk
-
-          echo "APK generated:"
-          echo "$APK_FILE"
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CineNova-APK
           path: apk-output/CineNova.apk
-          if-no-files-found: error
