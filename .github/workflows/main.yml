@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Find project
         id: find
         run: |
@@ -16,26 +15,34 @@ jobs:
           if [ -z "$PROJECT" ]; then PROJECT="."; fi
           echo "project_path=$PROJECT" >> $GITHUB_OUTPUT
           echo "Found at $PROJECT"
-
+      - name: FIX Google ID Token Error
+        working-directory: ${{ steps.find.outputs.project_path }}
+        run: |
+          echo "Fixing Google ID Token for Flutter..."
+          FILES=$(grep -r "GoogleSignIn" --include="*.dart" -l . || true)
+          for FILE in $FILES; do
+            echo "Patching $FILE"
+            if grep -q "serverClientId" "$FILE"; then
+              sed -i 's/serverClientId:.*".*"/serverClientId: "979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com"/g' "$FILE"
+            else
+              sed -i 's/GoogleSignIn(/GoogleSignIn(\n      serverClientId: "979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com",/g' "$FILE"
+            fi
+          done
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-
       - name: Get Dependencies
         working-directory: ${{ steps.find.outputs.project_path }}
         run: |
           flutter clean || true
           flutter pub get
-
       - name: Build APK
         working-directory: ${{ steps.find.outputs.project_path }}
         run: flutter build apk --release --no-tree-shake-icons
-
       - name: Upload APK v4
         uses: actions/upload-artifact@v4
         with:
