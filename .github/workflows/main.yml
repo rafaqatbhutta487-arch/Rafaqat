@@ -102,11 +102,17 @@ jobs:
 
           if [ -n "$MAIN_FILE" ]; then
             echo "Checking MainActivity.kt..."
-
             sed -i 's/vm\.comment(video\.id, commentText)/vm.comment(video.id, commentText) { }/' "$MAIN_FILE"
-
             echo "Comment callback auto-fix applied."
           fi
+
+          # --- FIX GOOGLE AUTH (NEW FIX) ---
+          echo "Fixing Google Auth - replacing serverAuthCode with idToken..."
+          find "$APP" -type f -name "*.kt" -exec sed -i 's/\.requestServerAuthCode([^)]*)/.requestIdToken("979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com")/g' {} +
+          find "$APP" -type f -name "*.kt" -exec sed -i 's/requestServerAuthCode/requestIdToken/g' {} +
+          find "$APP" -type f -name "*.kt" -exec sed -i 's/\.serverAuthCode/.idToken/g' {} +
+          find "$APP" -type f -name "*.kt" -exec sed -i 's/\.getServerAuthCode()/.idToken/g' {} +
+          echo "Google Auth fix applied."
 
           chmod +x "$ROOT/gradlew"
 
