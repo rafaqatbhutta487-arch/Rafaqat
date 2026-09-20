@@ -11,27 +11,23 @@ jobs:
       - name: Find and Extract ZIP
         shell: bash
         run: |
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-          echo "Using ZIP: $ZIP_FILE"
-          unzip -o "$ZIP_FILE" -d .
-          ls -la
-      - name: Find project
-        id: find
-        run: |
-          PROJECT=$(find . -name "pubspec.yaml" -type f -exec dirname {} \; | head -n 1)
-          if [ -z "$PROJECT" ]; then PROJECT="."; fi
-          echo "project_path=$PROJECT" >> $GITHUB_OUTPUT
-          echo "Found at $PROJECT"
+          set -x
+          ls -R | head -n 100
+          ZIP_FILE=$(find . -type f -name "*.zip" | head -n 1)
+          echo "ZIP FOUND: $ZIP_FILE"
+          if [ -z "$ZIP_FILE" ]; then exit 1; fi
+          unzip -o "$ZIP_FILE" -d ./project_extract
+          ls -R ./project_extract | head -n 200
+          PUB=$(find ./project_extract -name "pubspec.yaml" | head -n 1)
+          echo "PUBSPEC at $PUB"
+          echo "PUB_DIR=$(dirname $PUB)" >> $GITHUB_ENV
       - name: FIX Google ID Token Error
-        working-directory: ${{ steps.find.outputs.project_path }}
         run: |
-          FILES=$(grep -r "GoogleSignIn" --include="*.dart" -l . || true)
+          echo "Fixing in $PUB_DIR"
+          FILES=$(grep -r "GoogleSignIn" --include="*.dart" -l $PUB_DIR || true)
           for FILE in $FILES; do
-            if grep -q "serverClientId" "$FILE"; then
-              sed -i 's/serverClientId:.*".*"/serverClientId: "979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com"/g' "$FILE"
-            else
-              sed -i 's/GoogleSignIn(/GoogleSignIn(\n      serverClientId: "979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com",/g' "$FILE"
-            fi
+            echo "Patching $FILE"
+            sed -i 's/GoogleSignIn(/GoogleSignIn(\n      serverClientId: "979337680767-k8vr6hatd2d7pu4e14182lptrou1jo4a.apps.googleusercontent.com",/g' "$FILE"
           done
       - uses: actions/setup-java@v4
         with:
@@ -41,15 +37,17 @@ jobs:
         with:
           channel: 'stable'
       - name: Get Dependencies
-        working-directory: ${{ steps.find.outputs.project_path }}
+        working-directory: ${{ env.PUB_DIR }}
         run: |
+          pwd
+          ls -la
           flutter clean || true
           flutter pub get
       - name: Build APK
-        working-directory: ${{ steps.find.outputs.project_path }}
+        working-directory: ${{ env.PUB_DIR }}
         run: flutter build apk --release --no-tree-shake-icons
       - name: Upload APK v4
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: ${{ steps.find.outputs.project_path }}/build/app/outputs/flutter-apk/app-release.apk
+          path: ${{ env.PUB_DIR }}/build/app/outputs/flutter-apk/app-release.apk
